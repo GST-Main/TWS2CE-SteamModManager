@@ -59,9 +59,8 @@ internal static class ModIntegrationChecks
         Check(shell.IsModsSelected && mods.IsReady && !mods.HasError && mods.Items.Count == 4, "startup loads persisted mods and adopts existing script entries");
         Check(shell.CanLaunch && shell.LaunchCommand.CanExecute(null), "resolved game folders enable the top Launch button");
         shell.LaunchCommand.Execute(null);
-        Check(launches.Count == 1 && launches[0].FileName == Path.Combine(game, GameConstants.GameExecutable)
-            && launches[0].WorkingDirectory == game && launches[0].UseShellExecute,
-            "Launch runs the configured Complete Edition executable with its game working directory");
+        Check(launches.Count == 1 && launches[0].FileName == "steam://run/3846830" && launches[0].UseShellExecute,
+            "Launch asks Steam to start Complete Edition using its game App ID rather than the Workshop App ID");
         failLaunch = true;
         shell.LaunchCommand.Execute(null);
         Check(shell.LaunchError.Contains("Couldn't launch the game") && shell.CanLaunch,

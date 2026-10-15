@@ -30,6 +30,8 @@ public sealed class ApplicationLauncher : IApplicationLauncher
         string executable = Path.Combine(directory, GameConstants.GameExecutable);
         if (!File.Exists(executable))
             throw new FileNotFoundException(L.Text("msg.gameExecutableMissing"), executable);
-        start(new ProcessStartInfo(executable) { WorkingDirectory = directory, UseShellExecute = true });
+        // Let Steam create the game's launch context instead of starting the EXE
+        // from the manager's Workshop session (which uses a different App ID).
+        start(new ProcessStartInfo($"steam://run/{GameConstants.GameAppId}") { UseShellExecute = true });
     }
 }

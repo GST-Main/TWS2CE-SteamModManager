@@ -142,6 +142,11 @@ junctions in output paths or copied content are rejected.
 
 ## Steam integration notes
 
+The manager's **Launch** button validates the configured game folder, then opens
+`steam://run/3846830` to start Complete Edition through Steam. This allows Steam
+to supply the game's launch context. Workshop access still uses App ID `34330`.
+See Valve's [Steam launch mechanism](https://partner.steamgames.com/doc/api/steam_api#SteamAPI_RestartAppIfNecessary).
+
 The WPF app copies `steam_appid.txt` beside the executable for both development
 and published packages. It contains `34330` and is explicitly excluded from
 single-file bundling so Steam can read the physical file when the manager is
