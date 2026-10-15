@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>TWS2CESteamModManager</AssemblyName>
+    <ApplicationIcon>Assets\App.ico</ApplicationIcon>
+    <RootNamespace>TWS2CESteamModManager.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Remove="Languages\**\*" />
+    <Content Include="Languages\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <EmbeddedResource Include="Languages\en.json" LogicalName="Languages.en.json" />
+    <None Remove="Assets\App.ico" />
+    <Resource Include="Assets\App.ico" />
+    <ProjectReference Include="..\TWS2CESteamModManager.Steam\TWS2CESteamModManager.Steam.csproj" />
+    <None Update="steam_appid.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+</Project>

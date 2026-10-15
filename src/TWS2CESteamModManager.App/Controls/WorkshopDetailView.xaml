@@ -1,0 +1,133 @@
+<UserControl x:Class="TWS2CESteamModManager.App.Controls.WorkshopDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TWS2CESteamModManager.App.Localization"
+             xmlns:controls="clr-namespace:TWS2CESteamModManager.App.Controls"
+             KeyboardNavigation.TabNavigation="Cycle">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Margin="0,0,0,18">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,25,0">
+                <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Subtitle}" Foreground="#AAB0B9" Margin="0,8,0,0"/>
+            </StackPanel>
+            <Button x:Name="CloseButton" Grid.Column="1" Content="✕" VerticalAlignment="Top" Padding="12,8"
+                    Command="{Binding DataContext.CloseDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    ToolTip="{loc:Text tip.closeDetails}" AutomationProperties.Name="{loc:Text a11y.closeDetails}"/>
+        </Grid>
+        <ProgressBar Grid.Row="1" Height="2" IsIndeterminate="True" Foreground="#D9B77B" Background="#30343B"
+                     Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,15"/>
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,12,0">
+            <StackPanel>
+                <Border Background="#191D22" BorderBrush="#3B414A" BorderThickness="1" CornerRadius="7" Padding="18" Margin="0,0,0,18"
+                        Visibility="{Binding IsInstalledDetail, Converter={StaticResource BoolVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="{loc:Text label.enabledState}" Foreground="#929BA8"/>
+                        <TextBlock Grid.Column="1" Text="{Binding InstalledMod.EnabledState}"/>
+                        <TextBlock Grid.Row="1" Text="{loc:Text label.loadPosition}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding InstalledMod.Order}" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="2" Text="{loc:Text label.source}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding InstalledMod.Source}" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="3" Text="{loc:Text label.fileStatus}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding InstalledMod.Status}" Margin="0,9,0,0">
+                            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#A8C3A2"/>
+                                <Style.Triggers><DataTrigger Binding="{Binding InstalledMod.IsMissing}" Value="True"><Setter Property="Foreground" Value="#DBA48B"/></DataTrigger></Style.Triggers>
+                            </Style></TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Grid.Row="4" Text="{loc:Text label.workshopId}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding InstalledMod.WorkshopId}" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="5" Text="{loc:Text label.filename}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding InstalledMod.FileName}" TextWrapping="Wrap" Margin="0,9,0,0"/>
+                        <TextBlock Grid.Row="6" Text="{loc:Text label.installedPath}" Foreground="#929BA8" Margin="0,9,0,0"/>
+                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding InstalledMod.FilePath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                 Padding="0" Margin="0,9,0,0" AutomationProperties.Name="{loc:Text a11y.installedPath}"/>
+                    </Grid>
+                </Border>
+                <Border Background="#302820" BorderBrush="#6E5540" BorderThickness="1" CornerRadius="7" Padding="16" Margin="0,0,0,18"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="#DDC2A4"/>
+                        <Button Content="{loc:Text action.retryDetails}" Command="{Binding RetryCommand}" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+                <StackPanel Visibility="{Binding ShowGallery, Converter={StaticResource BoolVisibility}}">
+                <controls:WidescreenPreview>
+                <Grid Background="#141619">
+                    <TextBlock Text="{loc:Text label.previewUnavailable}" Foreground="#858D99" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                            <DataTrigger Binding="{Binding SelectedScreenshot.HasImage}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                        </Style.Triggers></Style></TextBlock.Style>
+                    </TextBlock>
+                    <Image Source="{Binding SelectedScreenshot.Image}" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                </controls:WidescreenPreview>
+                <Grid Margin="0,12,0,12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Button Content="←" Command="{Binding PreviousImageCommand}" Padding="12,6" AutomationProperties.Name="{loc:Text a11y.previousScreenshot}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ImagePosition}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#B3BAC5"/>
+                    <Button Grid.Column="2" Content="→" Command="{Binding NextImageCommand}" Padding="12,6" AutomationProperties.Name="{loc:Text a11y.nextScreenshot}"/>
+                </Grid>
+                <ListBox ItemsSource="{Binding Screenshots}" SelectedItem="{Binding SelectedScreenshot, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0" Margin="0,0,0,20" AutomationProperties.Name="{loc:Text a11y.screenshotGallery}">
+                    <ListBox.Template><ControlTemplate TargetType="ListBox"><ItemsPresenter/></ControlTemplate></ListBox.Template>
+                    <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">
+                        <Setter Property="Margin" Value="0,0,8,8"/><Setter Property="Padding" Value="3"/>
+                        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="Frame" BorderBrush="#3E444D" BorderThickness="2" CornerRadius="4" Padding="3"><ContentPresenter/></Border>
+                            <ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="#D9B77B"/></Trigger></ControlTemplate.Triggers>
+                        </ControlTemplate></Setter.Value></Setter>
+                    </Style></ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate><DataTemplate>
+                        <Grid Width="112" Height="63" Background="#141619" ToolTip="{Binding Caption}">
+                            <TextBlock Text="◇" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#7B7060">
+                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasImage}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                </Style.Triggers></Style></TextBlock.Style>
+                            </TextBlock>
+                            <Image Source="{Binding Image}" Stretch="Uniform"/>
+                        </Grid>
+                    </DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,14" Visibility="{Binding ShowWorkshopMetadata, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="{Binding Card.UpVotes}" Foreground="#9DBB9C"/>
+                    <TextBlock Text="{Binding Card.DownVotes}" Foreground="#C39187" Margin="18,0,0,0"/>
+                    <TextBlock Text="{Binding Card.Rating}" Foreground="#ABB2BE" Margin="18,0,0,0"/>
+                    <TextBlock Text="{Binding Card.Updated}" Foreground="#ABB2BE" Margin="24,0,0,0"/>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Card.Tags}" Margin="0,0,0,18" Visibility="{Binding ShowWorkshopMetadata, Converter={StaticResource BoolVisibility}}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate><DataTemplate><Border Background="#343840" CornerRadius="4" Padding="8,4" Margin="0,0,6,6"><TextBlock Text="{Binding}" Foreground="#B9C0CA" FontSize="11"/></Border></DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{loc:Text label.description}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                <TextBox Text="{Binding Description, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" Padding="0"
+                         Foreground="#CBD0D8" Background="Transparent" BorderThickness="0" AutomationProperties.Name="{loc:Text a11y.description}"/>
+            </StackPanel>
+        </ScrollViewer>
+        <Border Grid.Row="3" BorderBrush="#41464F" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0"
+                Visibility="{Binding HasWorkshopItem, Converter={StaticResource BoolVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                    <TextBlock Text="{Binding Card.DownloadStatus}" TextWrapping="Wrap" Foreground="#C7BEAD"
+                               Visibility="{Binding Card.HasDownloadStatus, Converter={StaticResource BoolVisibility}}"/>
+                    <ProgressBar Height="3" IsIndeterminate="True" Foreground="#D9B77B" Background="#413B31" Margin="0,8,0,0"
+                                 Visibility="{Binding Card.IsDownloading, Converter={StaticResource BoolVisibility}}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="{loc:Text action.cancelDownload}" Command="{Binding Card.CancelDownloadCommand}" Margin="0,0,10,0"
+                            Visibility="{Binding Card.IsDownloading, Converter={StaticResource BoolVisibility}}"/>
+                    <Button Content="{Binding Card.DownloadLabel}" Command="{Binding Card.DownloadCommand}"
+                            ToolTip="{Binding Card.DownloadHint}" ToolTipService.ShowOnDisabled="True"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

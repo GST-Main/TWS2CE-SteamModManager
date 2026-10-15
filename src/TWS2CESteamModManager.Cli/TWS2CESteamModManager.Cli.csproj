@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TWS2CESteamModManager.Core\TWS2CESteamModManager.Core.csproj" />
+    <ProjectReference Include="..\TWS2CESteamModManager.Steam\TWS2CESteamModManager.Steam.csproj" />
+    <Reference Include="Steamworks.NET">
+      <HintPath>..\TWS2CESteamModManager.Steam\lib\Steamworks.NET.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Update="steam_appid.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

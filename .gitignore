@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.dotnet/
+.downloads/
+.packages/
+*.user
+*.suo
+downloads/
+.test-results/
+.mod-downloads/
+artifacts/
