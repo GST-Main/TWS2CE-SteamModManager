@@ -12,7 +12,8 @@ important files before use.
    to browse and download Workshop mods.
 2. Confirm the detected game folders, or select them manually.
 3. Use **Browse** to download mods, or **Import** to add local `.pack` files.
-4. In **Mods**, enable, disable, reorder, or delete mods. Click **Launch** to play.
+4. In **Mods**, enable, disable, reorder, or delete mods. Click **Launch** to start
+   the game through Steam.
 
 You may be able to use mod.io alongside this manager, but this is unverified.
 There is no direct mod.io integration; compatible `.pack` files can be imported.
