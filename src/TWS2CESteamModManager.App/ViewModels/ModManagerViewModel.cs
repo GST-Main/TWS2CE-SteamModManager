@@ -166,9 +166,15 @@ public sealed class ModManagerViewModel : ObservableObject, IWorkshopDownloadCon
     private Task ToggleAsync(InstalledModViewModel mod, bool enabled)
     {
         if (!CanManage) { mod.RestoreEnabled(); return Task.CompletedTask; }
-        return RunAsync(() => service.SetEnabledAsync(mod.Id, enabled));
+        return ChangeEnabledAsync(mod, enabled);
     }
-    public Task SetEnabledAsync(Guid id, bool enabled) => !CanManage ? Task.CompletedTask : RunAsync(() => service.SetEnabledAsync(id, enabled));
+    public Task SetEnabledAsync(Guid id, bool enabled) => !CanManage || Items.FirstOrDefault(mod => mod.Id == id) is not { } mod
+        ? Task.CompletedTask : ChangeEnabledAsync(mod, enabled);
+
+    private Task ChangeEnabledAsync(InstalledModViewModel mod, bool enabled) => enabled
+        && mod.Snapshot.Mod.WorkshopItemId is { } itemId
+        ? RunTransferAsync(itemId, (progress, cancellationToken) => service.SetEnabledAsync(mod.Id, true, progress, cancellationToken), mod.Name)
+        : RunAsync(() => service.SetEnabledAsync(mod.Id, enabled));
     public Task MoveSelectedAsync(int offset)
     {
         if (!CanManage || SelectedMod is not { } mod) return Task.CompletedTask;
@@ -192,7 +198,7 @@ public sealed class ModManagerViewModel : ObservableObject, IWorkshopDownloadCon
         return DownloadingItemId == itemId ? L.Text("status.downloading") : L.Text("action.download");
     }
     public string GetDownloadHint(ulong itemId) => Items.Any(mod => mod.Snapshot.Mod.WorkshopItemId == itemId && mod.IsMissing)
-        ? L.Text("tip.removeMissing")
+        ? L.Text("tip.restoreMissing")
         : !IsReady || ShowFolderSetup ? L.Text("tip.setupBeforeDownload")
         : L.Text("tip.download");
     public bool CanDownload(ulong itemId) => CanManage && !Items.Any(mod => mod.Snapshot.Mod.WorkshopItemId == itemId);
@@ -200,6 +206,11 @@ public sealed class ModManagerViewModel : ObservableObject, IWorkshopDownloadCon
     public Task DownloadAsync(ulong itemId)
     {
         if (!CanDownload(itemId)) return Task.CompletedTask;
+        return RunTransferAsync(itemId, (progress, cancellationToken) => service.DownloadAsync(itemId, progress, cancellationToken));
+    }
+
+    private Task RunTransferAsync(ulong itemId, Func<IProgress<string>, CancellationToken, Task> transfer, string? restoreName = null)
+    {
         return RunAsync(async () =>
         {
             using var cancellation = new CancellationTokenSource();
@@ -207,18 +218,20 @@ public sealed class ModManagerViewModel : ObservableObject, IWorkshopDownloadCon
             int currentVersion = ++downloadVersion;
             DownloadingItemId = itemId;
             LastDownloadItemId = itemId;
-            DownloadStatus = L.Text("status.preparingDownload", itemId);
+            DownloadStatus = restoreName is null ? L.Text("status.preparingDownload", itemId) : L.Text("status.restoringMod", restoreName);
             var progress = new Progress<string>(message =>
             {
                 if (currentVersion == downloadVersion && DownloadingItemId == itemId) DownloadStatus = message;
             });
             try
             {
-                await service.DownloadAsync(itemId, progress, cancellation.Token);
-                DownloadStatus = L.Text("status.downloadInstalled", itemId);
+                await transfer(progress, cancellation.Token);
+                DownloadStatus = restoreName is null ? L.Text("status.downloadInstalled", itemId) : L.Text("status.modEnabled", restoreName);
             }
-            catch (OperationCanceledException) { DownloadStatus = L.Text("status.downloadCancelled", itemId); }
-            catch (Exception exception) { DownloadStatus = L.Text("status.downloadFailed", exception.Message); throw; }
+            catch (OperationCanceledException)
+            { DownloadStatus = restoreName is null ? L.Text("status.downloadCancelled", itemId) : L.Text("status.restoreCancelled", restoreName); }
+            catch (Exception exception)
+            { DownloadStatus = L.Text(restoreName is null ? "status.downloadFailed" : "msg.operationFailed", exception.Message); throw; }
             finally { downloadCancellation = null; DownloadingItemId = null; }
         });
     }

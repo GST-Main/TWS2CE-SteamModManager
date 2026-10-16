@@ -15,6 +15,10 @@ important files before use.
 4. In **Mods**, enable, disable, reorder, or delete mods. Click **Launch** to start
    the game through Steam.
 
+Disabling moves the pack into `data/disabled_mods`; enabling moves it back.
+Missing Workshop packs are re-downloaded when enabled. Imported packs must be
+restored manually if missing.
+
 You may be able to use mod.io alongside this manager, but this is unverified.
 There is no direct mod.io integration; compatible `.pack` files can be imported.
 

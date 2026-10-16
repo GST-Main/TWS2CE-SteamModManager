@@ -31,3 +31,11 @@ public interface IWorkshopModDownloader
 }
 
 public sealed class ModStateConflictException(string message) : IOException(message);
+
+/// <summary>A local-only enable needs to be retried on the caller's initialized Steam thread.</summary>
+public sealed class WorkshopModRestoreRequiredException(Guid modId, ulong itemId)
+    : IOException("The Workshop mod pack is missing and must be downloaded again.")
+{
+    public Guid ModId { get; } = modId;
+    public ulong ItemId { get; } = itemId;
+}

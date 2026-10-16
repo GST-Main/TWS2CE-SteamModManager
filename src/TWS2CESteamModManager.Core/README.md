@@ -160,11 +160,11 @@ IReadOnlyList<ManagedMod> orderedMods = manager.List();
 | `Import(packFilePath, cancellationToken)` | Keeps the filename, copies into `<game>/data` when needed, and appends enabled. An existing file directly in `data` is registered in place. |
 | `Import(packFilePath, imageFilePath, cancellationToken)` | Also copies a selected image with the pack's base filename. A null image path auto-discovers one beside the source pack, as does the original overload. |
 | `Download(itemId, report?, cancellationToken)` | Uses the supplied Steam adapter, installs pack files into `<game>/data`, and appends them enabled. Returns one entry per pack. |
-| `SetEnabled(id, enabled)` | Persists the flag and regenerates the enabled script order automatically. |
+| `SetEnabled(id, enabled, report?, cancellationToken, allowDownload)` | Moves packs to/from `data/disabled_mods`, persists the flag, and updates script order. Enabling a missing Workshop pack re-downloads it; a missing imported pack raises `FileNotFoundException`. Optional arguments default to null, no cancellation, and download allowed. |
 | `SetWorkshopDisplayNames(titlesByItemId)` | Fills missing Workshop display names by item ID, preserving existing saved names. Returns whether any names were saved. |
 | `Move(id, newIndex)` | Moves an entry to a zero-based position and updates the script. Disabled entries retain their list position. |
-| `Delete(id)` | Removes the pack and same-base-name image files from `data`, its manifest entry, and any enabled script declaration. An already missing pack can still be removed from the list. |
-| `GetFilePath(id)` | Returns the installed pack path. A future UI can check existence when displaying status. |
+| `Delete(id)` | Removes the pack from its active/disabled location, associated images, its manifest entry, and any enabled script declaration. An already missing pack can still be removed from the list. |
+| `GetFilePath(id)` | Returns the expected pack path in `data` when enabled, or `data/disabled_mods` when disabled. |
 | `GetImagePath(id)` | Returns an existing same-base-name image, or null. Works for Workshop and imported mods. |
 | `SynchronizeScript()` | Regenerates valid mod declarations from current enabled entries. |
 | `ScriptDiagnostics` | Reports malformed mod declarations retained in the script. |
@@ -173,6 +173,27 @@ Every mutation saves automatically. New entries are enabled at the end. The
 manifest records stable GUIDs, filenames, original filenames, optional display names, source, optional
 Workshop item ID, zero-based order, and enabled flags. The script only contains
 enabled filenames, following that order.
+
+Disabling physically moves the pack out of the active `data` directory, since
+some pack types load even without a script declaration. Enabling moves it back
+at its saved list position. Existing disabled entries are relocated automatically
+when opening an older manifest; enabled entries found in disabled storage are
+restored locally. Missing files do not trigger downloads during startup.
+
+If neither location contains a Workshop pack, enabling downloads the package and
+restores only the entry's original pack filename. Its ID, display name, order,
+and sibling entries stay intact. An unavailable/renamed original pack, failed
+download, or cancellation preserves its previous enabled state. Imported packs never use a
+downloader: restore their file into `disabled_mods` before enabling them.
+Thumbnail images remain available from either location, and are normally retained
+in `data` while the pack is disabled. Delete removes the associated images too.
+
+For UI callers, use `allowDownload: false` for local moves. A missing Workshop
+pack then raises `WorkshopModRestoreRequiredException`; retry on the initialized
+Steam thread with downloads allowed. The WPF app uses `IWorkshopModRestorer` to do
+this, sharing download progress, cancellation, and shutdown handling. Local moves
+do not require Steam. Duplicate copies in both locations cause a conflict rather
+than overwriting either file.
 
 `ManagedMod.DisplayName` serializes as `displayName`. It is an optional field in
 schema version 1, so manifests created before names were added still load.
@@ -201,8 +222,9 @@ are authoritative when opening; unknown script entries are appended enabled.
 Duplicate references become a single managed entry.
 
 Filename collisions, duplicate imports, and already-managed Workshop item IDs are
-rejected instead of overwriting existing packs. Re-downloading/updating an existing
-Workshop item is a separate future API; this implementation downloads new items.
+rejected instead of overwriting existing packs. `Download` installs new items;
+`SetEnabled` can recover a missing pack of an already-managed item. Updating an
+existing pack in place is not supported.
 The caller can inspect `ModManifestStore.Load(path)` or explicitly persist a
 `ModManifest` using `ModManifestStore.Save(path, manifest)`. Manager operations
 should be used when file/script synchronization is needed.
@@ -245,7 +267,8 @@ use `ModManager.Download` for installation and registration with the mod manager
 
 Each manager holds an exclusive sidecar lock for its mod manifest until disposed
 and serializes operations on that instance. Operations copy into private staging
-files, install/delete only validated packs and their image sidecars within `data`, replace JSON
+files, install/move/delete only validated packs and their image sidecars within
+`data` and `data/disabled_mods`, replace JSON
 and script files atomically, and roll back file/metadata changes on reported
 failures. Deleted files are temporarily renamed until both metadata writes succeed.
 Read-only files and permission errors are surfaced to the caller. An incomplete
@@ -253,7 +276,7 @@ rollback reports an aggregate error and prevents further operations on that inst
 
 Changes to the mod manifest or script by another application are detected before
 committing a mutation and produce `ModStateConflictException`. Dispose/reopen the
-manager to load the current files. Linked pack files and a linked `data` directory
+manager to load the current files. Linked pack files and linked `data`/`disabled_mods` directories
 are rejected. No directory-recursive deletion is used by the mod manager.
 
 ## Verification

@@ -98,7 +98,9 @@ internal static class ModManagerChecks
             manager.SetEnabled(importedId, false);
             Check(!manager.List().Single(mod => mod.Id == importedId).IsEnabled
                 && !UserScriptService.LoadOrCreate(appData).Mods.Contains(imported.FileName), "disable persists state and removes only its script declaration");
-            Check(File.Exists(manager.GetFilePath(importedId)), "disabling leaves the pack installed");
+            Check(File.Exists(manager.GetFilePath(importedId)) && !File.Exists(Path.Combine(data, imported.FileName))
+                && Path.GetDirectoryName(manager.GetFilePath(importedId)) == Path.Combine(data, "disabled_mods"),
+                "disabling moves the pack out of data into disabled_mods");
             manager.Move(secondWorkshopId, 0);
             Check(manager.List()[0].Id == secondWorkshopId
                 && UserScriptService.LoadOrCreate(appData).Mods[0] == "MOD_42_Zebra.PACK", "move updates stored and enabled script order");

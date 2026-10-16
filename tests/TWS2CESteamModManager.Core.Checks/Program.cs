@@ -182,6 +182,7 @@ Check(unresolved.Status == SetupStatus.NeedsBothFolders && unresolved.Script is 
 count += ModManagerChecks.Run(testRoot);
 count += ModImageChecks.Run(testRoot);
 count += ModNameChecks.Run(testRoot);
+count += DisabledModChecks.Run(testRoot);
 Console.WriteLine($"\n{count} backend checks passed. Fixtures: {testRoot}");
 if (args.Contains("--inspect-local"))
 {

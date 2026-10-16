@@ -17,11 +17,17 @@ public interface IWorkshopModInstaller
         Action<string>? report = null, CancellationToken cancellationToken = default);
 }
 
+public interface IWorkshopModRestorer
+{
+    Task RestoreAsync(ModManager manager, Guid modId, Action<string>? report = null,
+        CancellationToken cancellationToken = default);
+}
+
 public class SteamUnavailableException(string message) : InvalidOperationException(message);
 public sealed class SteamNotRunningException() : SteamUnavailableException("Steam must be running to browse Workshop.");
 
 /// <summary>Owns Steam initialization, callback pumping and queries on one dedicated worker.</summary>
-public sealed class SteamWorkshopBrowserService : IWorkshopBrowserService, IWorkshopModInstaller
+public sealed class SteamWorkshopBrowserService : IWorkshopBrowserService, IWorkshopModInstaller, IWorkshopModRestorer
 {
     private readonly BlockingCollection<IJob> jobs = new();
     private readonly CancellationTokenSource shutdown = new();
@@ -70,6 +76,13 @@ public sealed class SteamWorkshopBrowserService : IWorkshopBrowserService, IWork
     public Task<IReadOnlyList<ManagedMod>> InstallAsync(ModManager manager, ulong itemId,
         Action<string>? report = null, CancellationToken cancellationToken = default) =>
         Enqueue(token => manager.Download(itemId, report, token), cancellationToken);
+
+    public Task RestoreAsync(ModManager manager, Guid modId, Action<string>? report = null,
+        CancellationToken cancellationToken = default) => Enqueue(token =>
+        {
+            manager.SetEnabled(modId, true, report, token);
+            return true;
+        }, cancellationToken);
 
     private Task<T> Enqueue<T>(Func<CancellationToken, T> work, CancellationToken cancellationToken)
     {

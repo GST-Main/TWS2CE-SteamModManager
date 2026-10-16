@@ -119,7 +119,9 @@ internal static class ModIntegrationChecks
         InstalledModViewModel first = mods.Items[0];
         first.IsEnabled = false;
         await mods.WaitForIdleAsync();
-        Check(!mods.Items.Single(mod => mod.Id == first.Id).IsEnabled && !UserScriptService.LoadOrCreate(appData).Mods.Contains(first.FileName), "checkbox persists disabled state and script removal");
+        Check(!mods.Items.Single(mod => mod.Id == first.Id).IsEnabled && !UserScriptService.LoadOrCreate(appData).Mods.Contains(first.FileName)
+            && File.Exists(Path.Combine(data, "disabled_mods", first.FileName)) && !File.Exists(Path.Combine(data, first.FileName))
+            && !mods.Items.Single(mod => mod.Id == first.Id).IsMissing, "checkbox moves disabled packs out of data and preserves present-file status");
         await mods.SetEnabledAsync(first.Id, true);
         mods.SelectedMod = mods.Items.Single(mod => mod.Id == first.Id);
         await mods.MoveSelectedAsync(1);
@@ -146,6 +148,17 @@ internal static class ModIntegrationChecks
         Check(mods.Items[^1].Name == "Local 日本語" && mods.Items[^1].FileName == "Local 日本語.pack" && mods.Items[^1].IsEnabled && mods.Items[^1].Source == "Imported", "Import displays a persisted filename stem while retaining its installed filename");
         Check(File.Exists(Path.Combine(data, "Local 日本語.png")), "manual image is copied for the installed view");
         Check(mods.Items[^1].Image is not null, "installed view decodes a manual mod image");
+        Guid importedModId = mods.Items[^1].Id;
+        await mods.SetEnabledAsync(importedModId, false);
+        string disabledImport = Path.Combine(data, "disabled_mods", "Local 日本語.pack");
+        File.Delete(disabledImport);
+        await mods.SetEnabledAsync(importedModId, true);
+        Check(mods.HasError && !mods.Items.Single(mod => mod.Id == importedModId).IsEnabled && transport.RestoreCalls == 0,
+            "a missing imported pack reports an error and stays disabled without calling Workshop recovery");
+        File.WriteAllText(disabledImport, "manually restored imported payload");
+        await mods.SetEnabledAsync(importedModId, true);
+        Check(!mods.HasError && mods.Items.Single(mod => mod.Id == importedModId).IsEnabled
+            && File.Exists(Path.Combine(data, "Local 日本語.pack")), "a manually restored imported pack can be enabled through the UI");
         await shell.OpenInstalledDetailsAsync(mods.Items[^1]);
         Check(browser.Detail is { HasWorkshopItem: false, HasScreenshots: true } && browser.Detail.SelectedScreenshot!.HasImage,
             "local detail shows its imported image without a Workshop association");
@@ -186,6 +199,37 @@ internal static class ModIntegrationChecks
             && browser.Detail!.Card.DownloadLabel == "Installed", "browser and open detail labels update after installation");
         await render(window, "detail-installed", 1440, 900);
         browser.CloseDetails();
+
+        Guid restoreId = mods.Items.Single(mod => mod.Snapshot.Mod.WorkshopItemId == 200).Id;
+        string restorePack = Path.Combine(data, "MOD_200_payload.pack"), storedPack = Path.Combine(data, "disabled_mods", "MOD_200_payload.pack");
+        await mods.SetEnabledAsync(restoreId, false);
+        Check(File.Exists(storedPack) && !File.Exists(restorePack) && browser.Items.Single(item => item.Item.Id == 200).DownloadLabel == "Installed",
+            "disabled Workshop packs stay installed in browser labels while stored outside active data");
+        await mods.SetEnabledAsync(restoreId, true);
+        Check(File.Exists(restorePack) && !File.Exists(storedPack) && transport.RestoreCalls == 0 && !mods.HasError,
+            "enabling a stored Workshop pack uses a local move without contacting Steam");
+        await mods.SetEnabledAsync(restoreId, false);
+        File.Delete(storedPack);
+        await mods.InitializeAsync();
+        Check(mods.Items.Single(mod => mod.Id == restoreId).IsMissing, "a removed stored pack is shown as missing after reload");
+        transport.ResetWait();
+        Task cancelledRestore = mods.SetEnabledAsync(restoreId, true);
+        await transport.Entered.Task;
+        Check(mods.IsDownloading && !mods.CanManage && !shell.CanLaunch && mods.CancelDownloadCommand.CanExecute(null),
+            "missing Workshop recovery shares progress, cancellation and game-launch guards");
+        mods.CancelDownloadCommand.Execute(null);
+        await cancelledRestore;
+        Check(!mods.HasError && !mods.Items.Single(mod => mod.Id == restoreId).IsEnabled && !File.Exists(restorePack)
+            && mods.DownloadStatus.Contains("cancelled"), "cancelled recovery leaves the mod disabled and restores controls");
+        transport.WaitForRelease = false; transport.Fail = true;
+        await mods.SetEnabledAsync(restoreId, true);
+        Check(mods.HasError && !mods.Items.Single(mod => mod.Id == restoreId).IsEnabled && !File.Exists(restorePack),
+            "a failed recovery reports an error without leaving a checked or active mod");
+        transport.Fail = false;
+        await mods.SetEnabledAsync(restoreId, true);
+        Check(!mods.HasError && File.Exists(restorePack) && mods.Items.Single(mod => mod.Id == restoreId).IsEnabled
+            && mods.Items.Count(mod => mod.Snapshot.Mod.WorkshopItemId == 200) == 1 && mods.DownloadStatus.StartsWith("Enabled"),
+            "retrying enable restores the missing Workshop pack without duplicating its installed entry");
 
         transport.ResetWait();
         Task cancelled = mods.DownloadAsync(201);
@@ -352,8 +396,9 @@ internal static class ModIntegrationChecks
         }
         public void Dispose() { }
     }
-    private sealed class FixtureTransport(string root) : IWorkshopModInstaller, IWorkshopModDownloader
+    private sealed class FixtureTransport(string root) : IWorkshopModInstaller, IWorkshopModDownloader, IWorkshopModRestorer
     {
+        public int RestoreCalls { get; private set; }
         public bool WaitForRelease { get; set; }
         public bool Fail { get; set; }
         public string? LastThreadName { get; private set; }
@@ -362,6 +407,11 @@ internal static class ModIntegrationChecks
         public void ResetWait() { Release = new(false); Entered = new(TaskCreationOptions.RunContinuationsAsynchronously); WaitForRelease = true; }
         public Task<IReadOnlyList<ManagedMod>> InstallAsync(ModManager manager, ulong itemId, Action<string>? report = null, CancellationToken cancellationToken = default) =>
             Task.Run(() => manager.Download(itemId, report, cancellationToken), cancellationToken);
+        public Task RestoreAsync(ModManager manager, Guid modId, Action<string>? report = null, CancellationToken cancellationToken = default)
+        {
+            RestoreCalls++;
+            return Task.Run(() => manager.SetEnabled(modId, true, report, cancellationToken), cancellationToken);
+        }
         public WorkshopModPackage Download(ulong itemId, string cacheDirectory, Action<string>? report = null, CancellationToken cancellationToken = default)
         {
             LastThreadName = Thread.CurrentThread.Name;
