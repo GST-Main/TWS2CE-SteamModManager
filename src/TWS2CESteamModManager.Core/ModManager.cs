@@ -8,6 +8,7 @@ public sealed class ModManager : IDisposable
 {
     private readonly object gate = new();
     private readonly string dataPath;
+    private readonly string disabledPath;
     private readonly string manifestPath;
     private readonly string cachePath;
     private readonly string appDataPath;
@@ -20,6 +21,7 @@ public sealed class ModManager : IDisposable
     private bool disposed;
     private bool requiresReopen;
     private sealed record PendingInstall(string StagedPath, string TargetPath);
+    private sealed record PendingMove(string SourcePath, string TargetPath);
 
     private ModManager(ManagerManifest folders, string modManifestPath,
         IWorkshopModDownloader? downloader, string? downloadCacheDirectory)
@@ -32,6 +34,7 @@ public sealed class ModManager : IDisposable
         validated = GameLocationService.SelectGameInstallFolder(validated, folders.GameInstallPath);
         appDataPath = validated.AppDataPath!;
         dataPath = Path.Combine(validated.GameInstallPath!, "data");
+        disabledPath = Path.Combine(dataPath, "disabled_mods");
         manifestPath = Path.GetFullPath(modManifestPath);
         if (string.Equals(manifestPath, GameConstants.GetUserScriptPath(appDataPath), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("The mod manifest must be separate from user.script.txt.", nameof(modManifestPath));
@@ -88,12 +91,17 @@ public sealed class ModManager : IDisposable
 
     public string GetFilePath(Guid id)
     {
-        lock (gate) { RequireOpen(); return ModPath(Find(id).FileName); }
+        lock (gate) { RequireOpen(); return StoragePath(Find(id)); }
     }
 
     public string? GetImagePath(Guid id)
     {
-        lock (gate) { RequireOpen(); return ModImages.Find(ModPath(Find(id).FileName)); }
+        lock (gate)
+        {
+            RequireOpen();
+            string name = Find(id).FileName;
+            return ModImages.Find(ModPath(name)) ?? ModImages.Find(DisabledModPath(name));
+        }
     }
 
     public ManagedMod Import(string packFilePath, CancellationToken cancellationToken = default)
@@ -118,7 +126,10 @@ public sealed class ModManager : IDisposable
             var pending = new List<PendingInstall>();
             try
             {
-                if (!string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(source, DisabledModPath(name), StringComparison.OrdinalIgnoreCase))
+                    RequireFreeDestination(DisabledModPath(name));
+                if (!string.Equals(source, target, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(source, DisabledModPath(name), StringComparison.OrdinalIgnoreCase))
                 {
                     RequireFreeDestination(target);
                     pending.Add(new PendingInstall(StageCopy(source, cancellationToken), target));
@@ -169,6 +180,7 @@ public sealed class ModManager : IDisposable
                     if (!names.Add(name)) throw new IOException("The Workshop package contains duplicate pack filenames.");
                     string target = ModPath(name);
                     RequireFreeDestination(target);
+                    RequireFreeDestination(DisabledModPath(name));
                     entries.Add(new ManagedMod
                     {
                         Id = Guid.NewGuid(), FileName = name, OriginalFileName = original,
@@ -190,14 +202,60 @@ public sealed class ModManager : IDisposable
         }
     }
 
-    public void SetEnabled(Guid id, bool enabled)
+    /// <summary>Moves packs between data and disabled_mods, recovering missing Workshop packs when enabling.
+    /// Set allowDownload=false for local-only changes; a missing Workshop pack then raises
+    /// WorkshopModRestoreRequiredException so a UI can dispatch recovery to its Steam thread.</summary>
+    public void SetEnabled(Guid id, bool enabled, Action<string>? report = null,
+        CancellationToken cancellationToken = default, bool allowDownload = true)
     {
         lock (gate)
         {
             RequireOpen();
             ManagedMod entry = Find(id);
-            if (entry.IsEnabled == enabled) { EnsureCurrent(); return; }
-            Commit(mods.Select(mod => mod.Id == id ? mod with { IsEnabled = enabled } : mod).ToList());
+            EnsureCurrent();
+            cancellationToken.ThrowIfCancellationRequested();
+            var pending = new List<PendingInstall>();
+            try
+            {
+                if (enabled && !File.Exists(ModPath(entry.FileName)) && !File.Exists(DisabledModPath(entry.FileName)))
+                {
+                    if (entry.WorkshopItemId is not { } itemId)
+                        throw new FileNotFoundException("The imported mod pack is missing. Restore the file before enabling it.", StoragePath(entry));
+                    if (!allowDownload) throw new WorkshopModRestoreRequiredException(entry.Id, itemId);
+                    StageWorkshopRestore(entry, pending, report, cancellationToken);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                Commit(mods.Select(mod => mod.Id == id ? mod with { IsEnabled = enabled } : mod).ToList(), pending);
+            }
+            finally { foreach (PendingInstall install in pending) DeleteStaging(install.StagedPath); }
+        }
+    }
+
+    private void StageWorkshopRestore(ManagedMod entry, List<PendingInstall> pending,
+        Action<string>? report, CancellationToken cancellationToken)
+    {
+        if (downloader is null) throw new InvalidOperationException("Provide a Workshop downloader to recover the missing mod.");
+        WorkshopModPackage package = downloader.Download(entry.WorkshopItemId!.Value, cachePath, report, cancellationToken);
+        string root = Path.GetFullPath(package.Directory);
+        RejectLink(root);
+        var matches = new List<string>();
+        foreach (string file in package.PackFiles)
+        {
+            string source = Path.GetFullPath(file);
+            RequirePackageFile(root, source);
+            RequirePack(Path.GetFileName(source));
+            if (Path.GetFileName(source).Equals(entry.OriginalFileName, StringComparison.OrdinalIgnoreCase)) matches.Add(source);
+        }
+        if (matches.Count != 1)
+            throw new InvalidDataException("The Workshop package no longer contains a unique copy of this mod's original pack filename.");
+        string target = ModPath(entry.FileName);
+        RequireFreeDestination(target);
+        RequireFreeDestination(DisabledModPath(entry.FileName));
+        pending.Add(new PendingInstall(StageCopy(matches[0], cancellationToken), target));
+        if (package.ThumbnailPath is { } thumbnail)
+        {
+            RequirePackageFile(root, Path.GetFullPath(thumbnail));
+            if (GetImagePath(entry.Id) is null) StageImage(thumbnail, target, pending, cancellationToken);
         }
     }
 
@@ -238,8 +296,12 @@ public sealed class ModManager : IDisposable
         {
             RequireOpen();
             ManagedMod entry = Find(id);
-            string pack = ModPath(entry.FileName);
-            Commit(mods.Where(mod => mod.Id != id).ToList(), deletions: new[] { pack }.Concat(ModImages.FindAll(pack)).ToArray());
+            ValidateStorage();
+            string active = ModPath(entry.FileName), disabled = DisabledModPath(entry.FileName);
+            if (File.Exists(active) && File.Exists(disabled)) throw StorageCollision(entry.FileName);
+            string pack = File.Exists(active) ? active : File.Exists(disabled) ? disabled : StoragePath(entry);
+            Commit(mods.Where(mod => mod.Id != id).ToList(), deletions: new[] { pack }
+                .Concat(ModImages.FindAll(active)).Concat(ModImages.FindAll(disabled)).ToArray());
         }
     }
 
@@ -254,6 +316,7 @@ public sealed class ModManager : IDisposable
         EnsureCurrent();
         additions ??= Array.Empty<PendingInstall>();
         List<ManagedMod> ordered = next.Select((mod, index) => mod with { Order = index }).ToList();
+        IReadOnlyList<PendingMove> moves = PlanStorageMoves(ordered);
         byte[] nextManifest = ModManifestStore.Serialize(new ModManifest { Mods = ordered });
         byte[] nextScript = UserScriptService.RenderEnabledMods(script,
             ordered.Where(mod => mod.IsEnabled).Select(mod => mod.FileName));
@@ -266,10 +329,20 @@ public sealed class ModManager : IDisposable
         };
 
         var installed = new List<string>();
+        var moved = new List<PendingMove>();
         var removed = new List<(string Original, string Staged, string? Backup)>();
         bool wroteManifest = false, wroteScript = false;
         try
         {
+            foreach (PendingMove move in moves)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(move.TargetPath)!);
+                ValidateStorage();
+                RequireFreeDestination(move.TargetPath);
+                RejectLink(move.SourcePath);
+                File.Move(move.SourcePath, move.TargetPath);
+                moved.Add(move);
+            }
             foreach (PendingInstall addition in additions)
             {
                 RequireFreeDestination(addition.TargetPath);
@@ -324,6 +397,11 @@ public sealed class ModManager : IDisposable
                         : deletion.Backup ?? throw new IOException("The deleted pack could not be restored."), deletion.Original);
             });
             foreach (string file in installed.AsEnumerable().Reverse()) Restore(() => File.Delete(file));
+            foreach (PendingMove move in moved.AsEnumerable().Reverse()) Restore(() =>
+            {
+                RequireFreeDestination(move.SourcePath);
+                File.Move(move.TargetPath, move.SourcePath);
+            });
             if (rollbackErrors.Count > 0)
             {
                 requiresReopen = true;
@@ -355,6 +433,7 @@ public sealed class ModManager : IDisposable
     {
         RequireOpen();
         RejectLink(dataPath);
+        ValidateStorage();
         if (File.Exists(manifestPath)) RejectLink(manifestPath);
         if (File.Exists(script.FilePath)) RejectLink(script.FilePath);
         if (!AtomicFile.Equal(manifestSnapshot, AtomicFile.ReadOptional(manifestPath))
@@ -389,6 +468,41 @@ public sealed class ModManager : IDisposable
         RequirePack(name);
         return Path.Combine(dataPath, name);
     }
+
+    private string DisabledModPath(string name)
+    {
+        RequirePack(name);
+        return Path.Combine(disabledPath, name);
+    }
+
+    private string StoragePath(ManagedMod mod) => mod.IsEnabled ? ModPath(mod.FileName) : DisabledModPath(mod.FileName);
+
+    private void ValidateStorage()
+    {
+        if (!Path.Exists(disabledPath)) return;
+        RejectLink(disabledPath);
+        if (!Directory.Exists(disabledPath)) throw new IOException("The disabled_mods path must be a directory.");
+    }
+
+    private IReadOnlyList<PendingMove> PlanStorageMoves(IReadOnlyList<ManagedMod> next)
+    {
+        var moves = new List<PendingMove>();
+        foreach (ManagedMod mod in next)
+        {
+            string target = StoragePath(mod);
+            string other = mod.IsEnabled ? DisabledModPath(mod.FileName) : ModPath(mod.FileName);
+            foreach (string path in new[] { target, other })
+            {
+                if (Directory.Exists(path)) throw new IOException("The managed pack path is a directory.");
+                if (File.Exists(path)) RejectLink(path);
+            }
+            if (File.Exists(target) && File.Exists(other)) throw StorageCollision(mod.FileName);
+            if (!File.Exists(target) && File.Exists(other)) moves.Add(new PendingMove(other, target));
+        }
+        return moves;
+    }
+
+    private static IOException StorageCollision(string name) => new($"The mod exists in both data and disabled_mods. Resolve the duplicate before continuing: {name}.");
 
     private void RequireNewName(string name)
     {

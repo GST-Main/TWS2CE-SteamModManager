@@ -13,7 +13,7 @@ public interface IModManagementService : IAsyncDisposable
     Task OpenAsync(ManagerManifest folders);
     Task<IReadOnlyList<InstalledModSnapshot>> ReadAsync();
     Task ImportAsync(string path, CancellationToken cancellationToken);
-    Task SetEnabledAsync(Guid id, bool enabled);
+    Task SetEnabledAsync(Guid id, bool enabled, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
     Task MoveAsync(Guid id, int index);
     Task DeleteAsync(Guid id);
     Task DownloadAsync(ulong itemId, IProgress<string> progress, CancellationToken cancellationToken);
@@ -72,7 +72,23 @@ public sealed class ModManagementService : IModManagementService
             File.Exists(RequireManager().GetFilePath(mod.Id)), RequireManager().GetImagePath(mod.Id), RequireManager().GetFilePath(mod.Id))).ToArray()));
 
     public Task ImportAsync(string path, CancellationToken cancellationToken) => ChangeAsync(() => RequireManager().Import(path, cancellationToken));
-    public Task SetEnabledAsync(Guid id, bool enabled) => ChangeAsync(() => RequireManager().SetEnabled(id, enabled));
+    public Task SetEnabledAsync(Guid id, bool enabled, IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default) => RunAsync(async () =>
+    {
+        try
+        {
+            // Moves work offline. Native downloads must run on the Steam owner thread.
+            await Task.Run(() => RequireManager().SetEnabled(id, enabled,
+                cancellationToken: cancellationToken, allowDownload: false), cancellationToken);
+        }
+        catch (WorkshopModRestoreRequiredException)
+        {
+            if (installer is not IWorkshopModRestorer restorer)
+                throw new InvalidOperationException("The Workshop installer does not support restoring missing mods.");
+            await restorer.RestoreAsync(RequireManager(), id, progress is null ? null : progress.Report, cancellationToken);
+        }
+        return true;
+    });
     public Task MoveAsync(Guid id, int index) => ChangeAsync(() => RequireManager().Move(id, index));
     public Task DeleteAsync(Guid id) => ChangeAsync(() => RequireManager().Delete(id));
     public Task DownloadAsync(ulong itemId, IProgress<string> progress, CancellationToken cancellationToken) => RunAsync(async () =>
